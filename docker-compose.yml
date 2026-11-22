@@ -1,0 +1,26 @@
+services:
+  attribution:
+    build: .
+    image: attribution-app:local
+    container_name: attribution-app
+    ports:
+      - "${ATTRIBUTION_PORT:-8000}:8000"
+    environment:
+      ATTRIBUTION_DB_PATH: /data/attribution.db
+      ATTRIBUTION_MAX_BODY_BYTES: "16777216"
+    volumes:
+      - attribution_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  attribution_data:

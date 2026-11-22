@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>运营归因分析台</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --ink: #172033;
+      --muted: #6a7489;
+      --line: #e3e8f2;
+      --accent: #4f46e5;
+      --accent-soft: #eef0ff;
+      --ok: #0f9d72;
+      --ok-soft: #e7f8f1;
+      --warn: #b45309;
+      --warn-soft: #fff4e5;
+      --danger: #c62846;
+      --danger-soft: #fdecf0;
+      --shadow: 0 10px 30px rgba(23, 32, 51, 0.07);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(1200px 500px at 0% -10%, #e9edff 0%, transparent 55%),
+        radial-gradient(900px 500px at 100% 0%, #e8fbf5 0%, transparent 45%),
+        var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+        "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    header {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 30px 24px 10px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .brand h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: 0.2px; }
+    .brand p { margin: 0; color: var(--muted); font-size: 14px; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 12.5px;
+      color: var(--muted);
+      box-shadow: var(--shadow);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+    .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+    main {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 12px 24px 40px;
+      display: grid;
+      grid-template-columns: 420px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 1080px) {
+      main { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+    }
+    .panel h2 {
+      margin: 0 0 4px;
+      font-size: 15px;
+      letter-spacing: 0.3px;
+    }
+    .panel .hint { margin: 0 0 16px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+    label.field { display: block; margin-bottom: 12px; }
+    label.field span {
+      display: block;
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input[type="number"], textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13.5px;
+      color: var(--ink);
+      background: #fbfcfe;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type="number"]:focus, textarea:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      background: #fff;
+    }
+    textarea {
+      min-height: 340px;
+      resize: vertical;
+      font-size: 12.5px;
+      line-height: 1.6;
+      white-space: pre;
+      overflow: auto;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    button {
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .08s, box-shadow .15s, background .15s;
+      font-family: inherit;
+    }
+    button:active { transform: translateY(1px); }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(79, 70, 229, .25);
+      flex: 1;
+    }
+    button.primary:hover { background: #4338ca; }
+    button.ghost {
+      background: #f7f8fc;
+      border-color: var(--line);
+      color: var(--ink);
+    }
+    button.ghost:hover { background: #eef1f9; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .notice {
+      display: none;
+      margin-top: 14px;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 12.5px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .notice.show { display: block; }
+    .notice.error { background: var(--danger-soft); color: #8e1d33; border: 1px solid #f6c9d3; }
+    .notice.success { background: var(--ok-soft); color: #0c6b50; border: 1px solid #bfeadd; }
+    .notice ul { margin: 6px 0 0; padding-left: 18px; }
+
+    .results { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .empty {
+      border: 1px dashed #cfd7e6;
+      border-radius: var(--radius);
+      padding: 56px 24px;
+      text-align: center;
+      color: var(--muted);
+      background: rgba(255, 255, 255, .6);
+      line-height: 1.8;
+      font-size: 14px;
+    }
+    .empty strong { display: block; color: var(--ink); font-size: 16px; margin-bottom: 6px; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .stat .k { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+    .stat .v { font-size: 24px; font-weight: 700; letter-spacing: .3px; }
+    .stat .s { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+    .stat.accent .v { color: var(--accent); }
+    .stat.ok .v { color: var(--ok); }
+    .stat.warn .v { color: var(--warn); }
+
+    .user-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      box-shadow: var(--shadow);
+      flex-wrap: wrap;
+    }
+    .user-bar .label { font-size: 12.5px; color: var(--muted); }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      border: 1px solid var(--line);
+      background: #fbfcfe;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12.5px;
+      color: var(--ink);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+    }
+    .chip:hover { border-color: #c4caf5; }
+    .chip.active { background: var(--accent-soft); border-color: #c7c9ff; color: var(--accent); font-weight: 600; }
+
+    .result-panel { padding: 0; overflow: hidden; }
+    .result-head {
+      padding: 18px 20px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .result-head h2 { margin: 0; font-size: 16px; }
+    .result-head .meta { color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+    .settings-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .tag {
+      background: #f5f7fc;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 4px 9px;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .tag b { color: var(--ink); font-weight: 600; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 14px 20px 0;
+      border-bottom: 1px solid var(--line);
+      flex-wrap: wrap;
+    }
+    .tab {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .tab:hover { color: var(--ink); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-body { padding: 18px 20px 22px; }
+    .tab-panel[hidden] { display: none; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12.8px; }
+    thead th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    tbody td { padding: 10px; border-bottom: 1px solid #eef1f7; vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #fafbff; }
+    .table-wrap { overflow-x: auto; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge.ok { background: var(--ok-soft); color: #0b7054; }
+    .badge.warn { background: var(--warn-soft); color: var(--warn); }
+    .badge.muted { background: #f1f3f9; color: var(--muted); }
+    .muted-text { color: var(--muted); }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .reason-list { display: flex; flex-direction: column; gap: 10px; }
+    .reason-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #fbfcfe;
+      font-size: 13px;
+    }
+    .reason-item b { font-size: 16px; }
+
+    .chain-list { display: flex; flex-direction: column; gap: 14px; }
+    .chain-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: #fcfdff;
+    }
+    .chain-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .chain-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .chain-track {
+      position: relative;
+      height: 54px;
+      margin: 14px 6px 4px;
+      border-radius: 10px;
+      background:
+        linear-gradient(90deg, rgba(79,70,229,.06), rgba(16,185,129,.06));
+      border: 1px solid #edf0f8;
+    }
+    .chain-window-label {
+      position: absolute;
+      left: 8px; top: 5px;
+      font-size: 10.5px;
+      color: var(--muted);
+      letter-spacing: .2px;
+    }
+    .chain-tp {
+      position: absolute;
+      top: 24px;
+      transform: translate(-50%, -50%);
+      width: 15px; height: 15px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: #aab3c7;
+      box-shadow: 0 0 0 1px #cfd6e4;
+      cursor: default;
+    }
+    .chain-tp.selected {
+      width: 19px; height: 19px;
+      background: var(--ok);
+      box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(15,157,114,.22);
+      z-index: 3;
+    }
+    .chain-tp .tip {
+      display: none;
+      position: absolute;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1f2937;
+      color: #fff;
+      font-size: 10.5px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      z-index: 10;
+      line-height: 1.5;
+    }
+    .chain-tp:hover .tip { display: block; }
+    .chain-cv {
+      position: absolute;
+      right: -1px; top: 50%;
+      transform: translate(50%, -50%);
+      width: 13px; height: 13px;
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1px #b9baf5;
+      border-radius: 3px;
+    }
+    .chain-cv.unmatched { background: #fff; border-color: var(--danger); box-shadow: 0 0 0 1px #f3b9c5; }
+    .chain-foot { color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.6; }
+    .chain-foot .ok { color: #0b7054; font-weight: 600; }
+    .chain-foot .warn { color: var(--warn); font-weight: 600; }
+
+    .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin-bottom: 10px; }
+    .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend .sw { width: 11px; height: 11px; border-radius: 3px; }
+    .bar {
+      height: 7px;
+      border-radius: 999px;
+      background: #edf0f7;
+      overflow: hidden;
+      min-width: 90px;
+    }
+    .bar > i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+    .bar.full > i { background: var(--warn); }
+    details.raw { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+    details.raw summary { cursor: pointer; color: var(--muted); font-size: 12.5px; user-select: none; }
+    details.raw pre {
+      max-height: 340px;
+      overflow: auto;
+      background: #0f172a;
+      color: #d7e2f7;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 11.5px;
+      line-height: 1.55;
+    }
+    .channel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .channel-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: #fcfdff;
+    }
+    .channel-card .name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .channel-card .row { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .channel-card .row b { color: var(--ink); }
+    .footer-note { color: var(--muted); font-size: 11.5px; text-align: center; padding: 0 0 30px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>运营归因分析台</h1>
+      <p>触点容量约束下的最大归因匹配 · 可解释匹配链 · 幂等事件写入</p>
+    </div>
+    <div class="status-pill"><span class="dot" id="statusDot"></span><span id="statusText">正在检查服务…</span></div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>提交用户事件</h2>
+      <p class="hint">
+        粘贴同一用户的一批事件 JSON（user_id / touchpoints / conversions）。
+        窗口与默认容量以下方设置值为准。事件 ID 重复且内容一致时自动去重；
+        任一字段非法将整批拒绝。
+      </p>
+
+      <div class="grid-2">
+        <label class="field">
+          <span>归因窗口（秒）</span>
+          <input id="windowInput" type="number" min="1" step="1" value="604800" />
+        </label>
+        <label class="field">
+          <span>默认触点承接上限</span>
+          <input id="capacityInput" type="number" min="0" step="1" value="1" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>事件 JSON</span>
+        <textarea id="payloadInput" spellcheck="false"></textarea>
+      </label>
+
+      <div class="actions">
+        <button class="primary" id="submitBtn" type="button">分析并保存</button>
+        <button class="ghost" id="sampleBtn" type="button">填入示例</button>
+        <button class="ghost" id="clearBtn" type="button">清空</button>
+      </div>
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="results">
+      <div class="empty" id="emptyState">
+        <strong>尚无分析结果</strong>
+        提交一个用户的事件批次，或从上方“填入示例”开始。<br />
+        结果将展示归因触点、未归因原因、触点余量与渠道汇总。
+      </div>
+
+      <div id="resultArea" hidden>
+        <div class="stat-grid" id="stats"></div>
+
+        <div class="user-bar" style="margin-top: 16px;">
+          <span class="label">历史用户</span>
+          <div class="chips" id="userChips"></div>
+        </div>
+
+        <div class="panel result-panel" style="margin-top: 16px;">
+          <div class="result-head">
+            <div>
+              <h2 id="resultUser">—</h2>
+              <div class="meta" id="resultMeta"></div>
+            </div>
+            <div class="settings-tags" id="settingsTags"></div>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="conversions" role="tab">转化明细</button>
+            <button class="tab" data-tab="chains" role="tab">匹配链</button>
+            <button class="tab" data-tab="touchpoints" role="tab">触点容量</button>
+            <button class="tab" data-tab="channels" role="tab">渠道汇总</button>
+            <button class="tab" data-tab="reasons" role="tab">未归因原因</button>
+          </div>
+          <div class="tab-body">
+            <div class="tab-panel" id="tab-conversions"></div>
+            <div class="tab-panel" id="tab-chains" hidden></div>
+            <div class="tab-panel" id="tab-touchpoints" hidden></div>
+            <div class="tab-panel" id="tab-channels" hidden></div>
+            <div class="tab-panel" id="tab-reasons" hidden></div>
+          </div>
+          <div class="tab-body" style="padding-top: 0;">
+            <details class="raw">
+              <summary>查看原始响应 JSON</summary>
+              <pre id="rawJson"></pre>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <div class="footer-note">归因引擎：最大基数 + 优先级/时效最小代价匹配 · SQLite 原子写入</div>
+
+  <script>
+    "use strict";
+
+    const SAMPLE = {
+      user_id: "u_1001",
+      touchpoints: [
+        { id: "tp_search_1", occurred_at: "2026-11-01T09:00:00Z", channel: "搜索广告", priority: 3, capacity: 2 },
+        { id: "tp_social_1", occurred_at: "2026-11-02T10:00:00Z", channel: "社交媒体", priority: 2, capacity: 1 },
+        { id: "tp_email_1", occurred_at: "2026-11-03T08:00:00Z", channel: "邮件", priority: 5, capacity: 1 }
+      ],
+      conversions: [
+        { id: "cv_1", occurred_at: "2026-11-03T12:00:00Z", value: 199 },
+        { id: "cv_2", occurred_at: "2026-11-04T09:00:00Z", value: 89 },
+        { id: "cv_3", occurred_at: "2026-11-04T18:00:00Z", value: 50 },
+        { id: "cv_4", occurred_at: "2026-11-06T09:00:00Z", value: 60 },
+        { id: "cv_5", occurred_at: "2026-11-08T09:00:00Z", value: 75 },
+        { id: "cv_6", occurred_at: "2026-11-20T10:00:00Z", value: 300 }
+      ]
+    };
+
+    const state = {
+      result: null,
+      users: [],
+      activeTab: "conversions"
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[ch]));
+    const fmtNumber = (value) => Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    const fmtDateTime = (iso) => {
+      if (!iso) return "—";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return iso;
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+    const fmtGap = (seconds) => {
+      if (seconds == null) return "—";
+      const s = Number(seconds);
+      if (s >= 86400) return `${(s / 86400).toFixed(2)} 天`;
+      if (s >= 3600) return `${(s / 3600).toFixed(2)} 小时`;
+      if (s >= 60) return `${(s / 60).toFixed(1)} 分钟`;
+      return `${s.toFixed(0)} 秒`;
+    };
+    const fmtDuration = (seconds) => {
+      const s = Number(seconds);
+      if (s % 86400 === 0) return `${s / 86400} 天`;
+      if (s % 3600 === 0) return `${s / 3600} 小时`;
+      if (s % 60 === 0) return `${s / 60} 分钟`;
+      return `${s} 秒`;
+    };
+    const CHANNEL_COLORS = ["#4f46e5", "#0f9d72", "#d97706", "#0284c7", "#db2777", "#7c3aed", "#059669", "#dc2626"];
+    const channelColor = (() => {
+      const cache = new Map();
+      let cursor = 0;
+      return (channel) => {
+        const key = String(channel ?? "未分类");
+        if (!cache.has(key)) {
+          cache.set(key, CHANNEL_COLORS[cursor % CHANNEL_COLORS.length]);
+          cursor += 1;
+        }
+        return cache.get(key);
+      };
+    })();
+
+    function showNotice(kind, message, details) {
+      const node = $("notice");
+      node.className = `notice show ${kind}`;
+      node.innerHTML = escapeHtml(message);
+      if (details && details.length) {
+        const list = document.createElement("ul");
+        for (const item of details.slice(0, 12)) {
+          const li = document.createElement("li");
+          const field = item.field ? `${item.field}：` : "";
+          li.textContent = `${field}${item.message || item.event_id || JSON.stringify(item)}`;
+          list.appendChild(li);
+        }
+        node.appendChild(list);
+      }
+    }
+
+    function clearNotice() {
+      const node = $("notice");
+      node.className = "notice";
+      node.textContent = "";
+    }
+
+    async function checkHealth() {
+      const dot = $("statusDot");
+      const text = $("statusText");
+      try {
+        const response = await fetch("/health", { headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error("unhealthy");
+        dot.className = "dot ok";
+        text.textContent = "服务正常 · SQLite 已就绪";
+      } catch (error) {
+        dot.className = "dot bad";
+        text.textContent = "服务不可用";
+      }
+    }
+
+    async function fetchJson(url, options) {
+      const response = await fetch(url, options);
+      let body = null;
+      try { body = await response.json(); } catch (error) { body = null; }
+      if (!response.ok) {
+        const error = body && body.error ? body.error : {};
+        const thrown = new Error(error.message || `请求失败（HTTP ${response.status}）`);
+        thrown.details = error.details || [];
+        thrown.code = error.code;
+        throw thrown;
+      }
+      return body;
+    }
+
+    async function refreshUsers() {
+      try {
+        const data = await fetchJson("/api/users");
+        state.users = data.users || [];
+        renderUserChips();
+      } catch (error) {
+        // Non-fatal: keep the current result visible.
+      }
+    }
+
+    function renderUserChips() {
+      const wrap = $("userChips");
+      wrap.innerHTML = "";
+      if (!state.users.length) {
+        const span = document.createElement("span");
+        span.className = "muted-text";
+        span.style.fontSize = "12.5px";
+        span.textContent = "暂无已保存用户";
+        wrap.appendChild(span);
+        return;
+      }
+      for (const user of state.users) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chip" + (state.result && state.result.user_id === user.user_id ? " active" : "");
+        button.textContent = user.user_id;
+        button.title = `触点 ${user.touchpoints} · 转化 ${user.conversions}`;
+        button.addEventListener("click", () => loadUser(user.user_id));
+        wrap.appendChild(button);
+      }
+    }
+
+    async function loadUser(userId) {
+      try {
+        const result = await fetchJson(`/api/users/${encodeURIComponent(userId)}/attribution`);
+        applyResult(result, false);
+        renderUserChips();
+      } catch (error) {
+        showNotice("error", error.message, error.details);
+      }
+    }
+
+    async function submit() {
+      clearNotice();
+      let payload;
+      try {
+        payload = JSON.parse($("payloadInput").value);
+      } catch (error) {
+        showNotice("error", `JSON 解析失败：${error.message}`);
+        return;
+      }
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        showNotice("error", "请求体必须是 JSON 对象。");
+        return;
+      }
+      const windowSeconds = Number($("windowInput").value);
+      const capacity = Number($("capacityInput").value);
+      if (!Number.isInteger(windowSeconds) || windowSeconds <= 0) {
+        showNotice("error", "归因窗口必须是正整数秒。");
+        return;
+      }
+      if (!Number.isInteger(capacity) || capacity < 0) {
+        showNotice("error", "默认触点承接上限必须是非负整数。");
+        return;
+      }
+      payload.attribution_window_seconds = windowSeconds;
+      payload.default_touch_capacity = capacity;
+
+      const button = $("submitBtn");
+      button.disabled = true;
+      button.textContent = "分析中…";
+      try {
+        const result = await fetchJson("/attribute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(payload)
+        });
+        applyResult(result, true);
+        await refreshUsers();
+      } catch (error) {
+        showNotice("error", error.message || "请求失败", error.details);
+      } finally {
+        button.disabled = false;
+        button.textContent = "分析并保存";
+      }
+    }
+
+    function applyResult(result, isFresh) {
+      state.result = result;
+      $("emptyState").hidden = true;
+      $("resultArea").hidden = false;
+      renderStats(result);
+      renderHeader(result);
+      renderConversions(result);
+      renderChains(result);
+      renderTouchpoints(result);
+      renderChannels(result);
+      renderReasons(result);
+      $("rawJson").textContent = JSON.stringify(result, null, 2);
+      if (isFresh && result.received) {
+        const { inserted, duplicates_ignored: duplicates } = result.received;
+        showNotice("success", `已保存：新写入 ${inserted} 条事件，${duplicates} 条重复事件按 ID 幂等忽略。`);
+      }
+    }
+
+    function renderStats(result) {
+      const totals = result.totals;
+      const rate = totals.conversions ? (totals.attributed_conversions / totals.conversions * 100) : 0;
+      const usage = totals.touchpoint_capacity ? (totals.capacity_used / totals.touchpoint_capacity * 100) : 0;
+      const stats = [
+        { k: "已归因转化", v: fmtNumber(totals.attributed_conversions), s: `共 ${fmtNumber(totals.conversions)} 个转化`, cls: "ok" },
+        { k: "归因率", v: `${rate.toFixed(1)}%`, s: `${fmtNumber(totals.unattributed_conversions)} 个未归因`, cls: "accent" },
+        { k: "归因金额", v: fmtNumber(totals.attributed_value), s: "仅统计成功归因的转化", cls: "accent" },
+        { k: "触点容量占用", v: `${usage.toFixed(1)}%`, s: `${fmtNumber(totals.capacity_used)} / ${fmtNumber(totals.touchpoint_capacity)}`, cls: usage >= 100 ? "warn" : "" },
+        { k: "触点事件", v: fmtNumber(totals.touchpoints), s: "窗口内可能被复用", cls: "" }
+      ];
+      $("stats").innerHTML = stats.map((item) => `
+        <div class="stat ${item.cls}">
+          <div class="k">${escapeHtml(item.k)}</div>
+          <div class="v">${escapeHtml(item.v)}</div>
+          <div class="s">${escapeHtml(item.s)}</div>
+        </div>`).join("");
+    }
+
+    function renderHeader(result) {
+      $("resultUser").textContent = result.user_id;
+      $("resultMeta").textContent = `最近更新 ${fmtDateTime(result.updated_at)} · 窗口内触点可复用，每触点至多承接其容量`;
+      $("settingsTags").innerHTML = `
+        <span class="tag">归因窗口 <b>${escapeHtml(fmtDuration(result.settings.attribution_window_seconds))}</b></span>
+        <span class="tag">默认容量 <b>${escapeHtml(result.settings.default_touch_capacity)}</b></span>
+        <span class="tag">转化 <b>${escapeHtml(result.totals.conversions)}</b></span>
+        <span class="tag">触点 <b>${escapeHtml(result.totals.touchpoints)}</b></span>`;
+    }
+
+    function reasonLabel(reason) {
+      if (reason === "no_eligible_touchpoint") return "窗口内无有效触点";
+      if (reason === "capacity_exhausted") return "触点容量已耗尽";
+      return reason || "—";
+    }
+
+    function renderConversions(result) {
+      const rows = result.conversions.map((row) => {
+        const status = row.attributed
+          ? `<span class="badge ok">已归因</span>`
+          : `<span class="badge warn">未归因</span>`;
+        const channel = row.channel
+          ? `<span style="display:inline-flex;align-items:center;gap:6px;"><i style="width:9px;height:9px;border-radius:50%;background:${channelColor(row.channel)};display:inline-block;"></i>${escapeHtml(row.channel)}</span>`
+          : `<span class="muted-text">—</span>`;
+        return `<tr>
+          <td class="mono">${escapeHtml(row.conversion_id)}</td>
+          <td>${escapeHtml(fmtDateTime(row.occurred_at))}</td>
+          <td class="num">${escapeHtml(fmtNumber(row.value))}</td>
+          <td>${status}</td>
+          <td>${channel}</td>
+          <td class="mono">${row.touchpoint_id ? escapeHtml(row.touchpoint_id) : `<span class="muted-text">—</span>`}</td>
+          <td class="num">${escapeHtml(fmtGap(row.time_gap_seconds))}</td>
+          <td>${escapeHtml(reasonLabel(row.reason))}</td>
+        </tr>`;
+      }).join("");
+      $("tab-conversions").innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>转化 ID</th><th>发生时间</th><th class="num">金额</th><th>状态</th>
+              <th>归因渠道</th><th>归因触点</th><th class="num">触点领先</th><th>未归因原因</th>
+            </tr></thead>
+            <tbody>${rows || `<tr><td colspan="8" class="muted-text">暂无转化事件</td></tr>`}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function renderChains(result) {
+      const container = $("tab-chains");
+      if (!result.conversions.length) {
+        container.innerHTML = `<p class="muted-text">暂无转化事件，无法绘制匹配链。</p>`;
+        return;
+      }
+      const windowSeconds = Number(result.settings.attribution_window_seconds);
+      const legendItems = [...new Set(
+        result.conversions.filter((row) => row.channel).map((row) => row.channel)
+      )].map((channel) => `
+        <span class="item"><span class="sw" style="background:${channelColor(channel)}"></span>${escapeHtml(channel)}</span>
+      `).join("");
+
+      const cards = result.conversions.map((row) => {
+        const conversionTime = new Date(row.occurred_at).getTime();
+        const spanMs = Math.max(windowSeconds * 1000, 1);
+        const dots = (row.eligible_touchpoints || []).map((tp) => {
+          const tpTime = new Date(tp.occurred_at).getTime();
+          const gapMs = conversionTime - tpTime;
+          const pct = Math.max(0, Math.min(100, 100 * (1 - gapMs / spanMs)));
+          const classes = "chain-tp" + (tp.selected ? " selected" : "");
+          const title = `${tp.touchpoint_id} · ${tp.channel} · 优先级 ${tp.priority}\n${fmtDateTime(tp.occurred_at)} · 容量 ${tp.capacity}`;
+          return `<div class="${classes}" style="left: calc(${pct.toFixed(2)}% - 0px); background:${tp.selected ? "#0f9d72" : channelColor(tp.channel)};"
+                    title="${escapeHtml(title)}">
+                    <span class="tip">${escapeHtml(tp.touchpoint_id)} · ${escapeHtml(tp.channel)}<br/>${escapeHtml(fmtGap((conversionTime - tpTime) / 1000))}</span>
+                  </div>`;
+        }).join("");
+        const missing = row.eligible_touchpoints.length === 0
+          ? `<span class="muted-text" style="position:absolute;left:10px;top:26px;font-size:11.5px;">窗口内无触点</span>`
+          : "";
+        const statusBadge = row.attributed
+          ? `<span class="badge ok">已归因 · ${escapeHtml(row.channel)}</span>`
+          : `<span class="badge warn">未归因</span>`;
+        const selectedInfo = row.attributed
+          ? `命中触点 <b class="mono">${escapeHtml(row.touchpoint_id)}</b> · 领先 ${escapeHtml(fmtGap(row.time_gap_seconds))} · 优先级 ${escapeHtml(row.priority)}`
+          : `原因：<span class="warn">${escapeHtml(reasonLabel(row.reason))}</span> · 窗口内候选 ${escapeHtml(row.eligible_count)} 个`;
+        return `<div class="chain-card">
+          <div class="chain-top">
+            <div class="chain-title">
+              <span class="mono">${escapeHtml(row.conversion_id)}</span>
+              <span class="muted-text">${escapeHtml(fmtDateTime(row.occurred_at))}</span>
+              <span class="muted-text">金额 ${escapeHtml(fmtNumber(row.value))}</span>
+              ${statusBadge}
+            </div>
+            <span class="muted-text" style="font-size:11.5px;">窗口 ${escapeHtml(fmtDuration(windowSeconds))}</span>
+          </div>
+          <div class="chain-track">
+            <span class="chain-window-label">窗口起点 ${escapeHtml(fmtDateTime(new Date(conversionTime - spanMs).toISOString()))}</span>
+            ${dots}
+            ${missing}
+            <div class="chain-cv ${row.attributed ? "" : "unmatched"}" title="转化 ${escapeHtml(row.conversion_id)}"></div>
+          </div>
+          <div class="chain-foot">${row.attributed ? `<span class="ok">${selectedInfo}</span>` : selectedInfo}</div>
+        </div>`;
+      }).join("");
+
+      container.innerHTML = `
+        <div class="legend">
+          <span class="item"><span class="sw" style="background:#0f9d72"></span>被选触点</span>
+          <span class="item"><span class="sw" style="background:#aab3c7"></span>其他候选触点</span>
+          <span class="item"><span class="sw" style="background:#4f46e5;border-radius:2px"></span>转化</span>
+          ${legendItems}
+        </div>
+        <p class="hint" style="margin-bottom:12px;">每条链以转化为右端点，向左展开归因窗口。圆点越靠右表示触点越接近转化；绿色圆点是最终归因触点。</p>
+        <div class="chain-list">${cards}</div>`;
+    }
+
+    function renderTouchpoints(result) {
+      const rows = result.touchpoints.map((tp) => {
+        const used = Number(tp.used);
+        const capacity = Number(tp.capacity);
+        const pct = capacity > 0 ? Math.min(100, used / capacity * 100) : 0;
+        return `<tr>
+          <td class="mono">${escapeHtml(tp.touchpoint_id)}</td>
+          <td style="display:flex;align-items:center;gap:6px;">
+            <i style="width:9px;height:9px;border-radius:50%;background:${channelColor(tp.channel)};display:inline-block;"></i>
+            ${escapeHtml(tp.channel)}
+          </td>
+          <td>${escapeHtml(fmtDateTime(tp.occurred_at))}</td>
+          <td class="num">${escapeHtml(tp.priority)}</td>
+          <td class="num">${escapeHtml(capacity)}</td>
+          <td class="num">${escapeHtml(used)}</td>
+          <td class="num">${escapeHtml(tp.remaining)}</td>
+          <td style="min-width:120px;">
+            <div class="bar ${capacity > 0 && used >= capacity ? "full" : ""}"><i style="width:${pct.toFixed(1)}%"></i></div>
+          </td>
+        </tr>`;
+      }).join("");
+      $("tab-touchpoints").innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>触点 ID</th><th>渠道</th><th>发生时间</th><th class="num">优先级</th>
+              <th class="num">容量</th><th class="num">已用</th><th class="num">余量</th><th>占用</th>
+            </tr></thead>
+            <tbody>${rows || `<tr><td colspan="8" class="muted-text">暂无触点事件</td></tr>`}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function renderChannels(result) {
+      if (!result.channels.length) {
+        $("tab-channels").innerHTML = `<p class="muted-text">暂无触点渠道数据。</p>`;
+        return;
+      }
+      const totalValue = result.totals.attributed_value || 1;
+      const cards = result.channels.map((channel) => {
+        const share = totalValue > 0 ? (channel.attributed_value / totalValue * 100) : 0;
+        const pct = channel.capacity > 0 ? (channel.attributed_conversions / channel.capacity * 100) : 0;
+        return `<div class="channel-card">
+          <div class="name"><i style="width:10px;height:10px;border-radius:50%;background:${channelColor(channel.channel)};display:inline-block;"></i>${escapeHtml(channel.channel)}</div>
+          <div class="row"><span>归因转化</span><b>${escapeHtml(channel.attributed_conversions)} 个</b></div>
+          <div class="row"><span>归因金额</span><b>${escapeHtml(fmtNumber(channel.attributed_value))}</b></div>
+          <div class="row"><span>触点 / 总容量</span><b>${escapeHtml(channel.touchpoints)} / ${escapeHtml(channel.capacity)}</b></div>
+          <div class="row"><span>金额占比</span><b>${share.toFixed(1)}%</b></div>
+          <div class="bar" style="margin-top:10px;"><i style="width:${Math.min(100, pct).toFixed(1)}%;background:${channelColor(channel.channel)}"></i></div>
+        </div>`;
+      }).join("");
+      $("tab-channels").innerHTML = `<div class="channel-grid">${cards}</div>`;
+    }
+
+    function renderReasons(result) {
+      const reasons = result.unattributed_reasons || {};
+      const labels = {
+        no_eligible_touchpoint: "窗口内无有效触点",
+        capacity_exhausted: "触点容量已耗尽"
+      };
+      const entries = Object.entries(reasons).filter(([, count]) => Number(count) > 0);
+      const reasonCards = entries.map(([key, count]) => `
+        <div class="reason-item">
+          <span>${escapeHtml(labels[key] || key)}<br/><span class="muted-text" style="font-size:11.5px;">${escapeHtml(key)}</span></span>
+          <b>${escapeHtml(count)}</b>
+        </div>`).join("");
+      const unattributed = result.conversions.filter((row) => !row.attributed);
+      const detail = unattributed.map((row) => `
+        <tr>
+          <td class="mono">${escapeHtml(row.conversion_id)}</td>
+          <td>${escapeHtml(fmtDateTime(row.occurred_at))}</td>
+          <td class="num">${escapeHtml(fmtNumber(row.value))}</td>
+          <td>${escapeHtml(reasonLabel(row.reason))}</td>
+          <td class="num">${escapeHtml(row.eligible_count)}</td>
+        </tr>`).join("");
+      $("tab-reasons").innerHTML = `
+        <div class="reason-list" style="margin-bottom:18px;">
+          ${reasonCards || `<div class="reason-item"><span>所有转化均已归因 🎉</span><b>0</b></div>`}
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>转化 ID</th><th>发生时间</th><th class="num">金额</th><th>原因</th><th class="num">窗口内候选</th></tr></thead>
+            <tbody>${detail || `<tr><td colspan="5" class="muted-text">没有未归因转化。</td></tr>`}</tbody>
+          </table>
+        </div>`;
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      document.querySelectorAll(".tab").forEach((button) => {
+        const active = button.dataset.tab === tab;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      document.querySelectorAll(".tab-panel").forEach((panel) => {
+        panel.hidden = panel.id !== `tab-${tab}`;
+      });
+    }
+
+    function fillSample() {
+      $("payloadInput").value = JSON.stringify(SAMPLE, null, 2);
+      $("windowInput").value = 604800;
+      $("capacityInput").value = 1;
+      clearNotice();
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      fillSample();
+      checkHealth();
+      refreshUsers();
+      $("submitBtn").addEventListener("click", submit);
+      $("sampleBtn").addEventListener("click", fillSample);
+      $("clearBtn").addEventListener("click", () => {
+        $("payloadInput").value = "";
+        clearNotice();
+      });
+      document.querySelectorAll(".tab").forEach((button) => {
+        button.addEventListener("click", () => switchTab(button.dataset.tab));
+      });
+      $("payloadInput").addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") submit();
+      });
+    });
+  </script>
+</body>
+</html>
