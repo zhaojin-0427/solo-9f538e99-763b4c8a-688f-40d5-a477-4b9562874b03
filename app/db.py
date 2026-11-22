@@ -39,6 +39,19 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_user_type_time
     ON events (user_id, event_type, occurred_at);
+
+-- Denormalised per-user counters maintained inside the same write
+-- transaction as the events they summarise.  The counts only ever move
+-- when a brand-new event row is committed; duplicate requests, conflicts
+-- and rollbacks leave them untouched.  Startup reconciliation rebuilds
+-- every row from ``events`` so pre-existing databases converge as well.
+CREATE TABLE IF NOT EXISTS user_summaries (
+    user_id          TEXT PRIMARY KEY,
+    touchpoint_count INTEGER NOT NULL DEFAULT 0,
+    conversion_count INTEGER NOT NULL DEFAULT 0,
+    updated_at       TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
 """
 
 
@@ -102,8 +115,36 @@ class Database:
         try:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(SCHEMA)
+            self._reconcile_summaries(connection)
         finally:
             connection.close()
+
+    def _reconcile_summaries(self, connection: sqlite3.Connection) -> None:
+        """Rebuild every summary row from the authoritative events table.
+
+        Runs at startup so databases created before the summary existed are
+        backfilled, and any drift (e.g. a crash between writes) converges to
+        the event detail.  The ``updated_at`` mirror of ``users`` keeps the
+        ordering of ``/api/users`` identical to the previous query.
+        """
+
+        connection.execute(
+            """
+            INSERT INTO user_summaries
+                (user_id, touchpoint_count, conversion_count, updated_at)
+            SELECT u.user_id,
+                   COALESCE(SUM(e.event_type = 'touchpoint'), 0),
+                   COALESCE(SUM(e.event_type = 'conversion'), 0),
+                   u.updated_at
+            FROM users u
+            LEFT JOIN events e ON e.user_id = u.user_id
+            GROUP BY u.user_id
+            ON CONFLICT(user_id) DO UPDATE SET
+                touchpoint_count = excluded.touchpoint_count,
+                conversion_count = excluded.conversion_count,
+                updated_at       = excluded.updated_at
+            """
+        )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -164,6 +205,8 @@ class Database:
             inserted = len(prepared) - duplicates
 
             self._upsert_user(connection, request, now)
+            inserted_touchpoints = 0
+            inserted_conversions = 0
             if inserted:
                 for event_id, payload_hash, event in prepared:
                     if event_id in existing:
@@ -171,6 +214,20 @@ class Database:
                     self._insert_event(
                         connection, request.user_id, event, payload_hash
                     )
+                    if isinstance(event, TouchpointIn):
+                        inserted_touchpoints += 1
+                    else:
+                        inserted_conversions += 1
+            # Committed together with the event rows above.  Only first-time
+            # events move the counters; duplicates and conflict rejections
+            # never reach this statement or roll the whole transaction back.
+            self._upsert_summary(
+                connection,
+                request.user_id,
+                inserted_touchpoints,
+                inserted_conversions,
+                now,
+            )
 
             result = self._compute_locked(connection, request.user_id)
             result["received"] = {
@@ -240,6 +297,29 @@ class Database:
             ),
         )
 
+    def _upsert_summary(
+        self,
+        connection: sqlite3.Connection,
+        user_id: str,
+        touchpoint_delta: int,
+        conversion_delta: int,
+        now: str,
+    ) -> None:
+        """Advance the denormalised counters by newly inserted events only."""
+
+        connection.execute(
+            """
+            INSERT INTO user_summaries
+                (user_id, touchpoint_count, conversion_count, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                touchpoint_count = touchpoint_count + excluded.touchpoint_count,
+                conversion_count = conversion_count + excluded.conversion_count,
+                updated_at       = excluded.updated_at
+            """,
+            (user_id, touchpoint_delta, conversion_delta, now),
+        )
+
     def _insert_event(
         self,
         connection: sqlite3.Connection,
@@ -284,16 +364,17 @@ class Database:
 
     def list_users(self) -> List[dict]:
         with self.read() as connection:
+            # Counters come straight from user_summaries: no per-request
+            # aggregation over events, so the cost stays flat as events grow.
             rows = connection.execute(
                 """
                 SELECT u.user_id, u.window_seconds, u.default_capacity,
-                       u.updated_at,
-                       COALESCE(SUM(e.event_type = 'touchpoint'), 0) AS touchpoints,
-                       COALESCE(SUM(e.event_type = 'conversion'), 0) AS conversions
+                       s.updated_at,
+                       s.touchpoint_count AS touchpoints,
+                       s.conversion_count AS conversions
                 FROM users u
-                LEFT JOIN events e ON e.user_id = u.user_id
-                GROUP BY u.user_id
-                ORDER BY u.updated_at DESC, u.user_id ASC
+                JOIN user_summaries s ON s.user_id = u.user_id
+                ORDER BY s.updated_at DESC, u.user_id ASC
                 """
             ).fetchall()
         return [
